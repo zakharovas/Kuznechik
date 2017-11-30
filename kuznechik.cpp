@@ -31,9 +31,16 @@ void Kuznechik::EncryptBlock(__m128i *block) const {
     for (size_t i = 0; i < 9; ++i) {
         X(block, i);
         SL(block);
-        //L(block);
     }
     X(block, 9);
+}
+
+void Kuznechik::Encrypt2Blocks(__m256i *block) const {
+    for (size_t i = 0; i < 9; ++i) {
+        X2(block, i);
+        SL2(block);
+    }
+    X2(block, 9);
 }
 
 void Kuznechik::GenerateKey() {
@@ -53,7 +60,8 @@ Kuznechik::Kuznechik() {
 }
 
 void Kuznechik::X(__m128i *block, size_t key_number) const {
-    *block = _mm_xor_si128(*block, keys_[key_number]);
+    //*block = _mm_xor_si128(*block, keys_[key_number]);
+    *block ^= keys_[key_number];
 }
 
 void Kuznechik::S(__m128i *block) const {
@@ -116,7 +124,18 @@ void Kuznechik::SL(__m128i *block) const {
     __m128i answer = _mm_setzero_si128();
     uint8_t *as_array = (uint8_t *) block;
     for (size_t i = 0; i < 16; ++i) {
-        answer = _mm_xor_si128(answer, Kuznechik::byte_sl_matrix_[i][as_array[i]]);
+//        answer = _mm_xor_si128(answer, Kuznechik::byte_sl_matrix_[i][as_array[i]]);
+        answer ^= Kuznechik::byte_sl_matrix_[i][as_array[i]];
+    }
+    *block = answer;
+}
+
+void Kuznechik::SL2(__m256i *block) const {
+    __m256i answer = _mm256_setzero_si256();
+    uint8_t *as_array = (uint8_t *) block;
+    for (size_t i = 0; i < 16; ++i) {
+        answer = _mm256_xor_si256(answer, _mm256_set_m128i(Kuznechik::byte_sl_matrix_[i][as_array[i]],
+                                   Kuznechik::byte_sl_matrix_[i][as_array[16 + i]]));
     }
     *block = answer;
 }
@@ -149,10 +168,12 @@ void Kuznechik::ComputeLinearMatrix() {
 uint8_t gmul(uint8_t a, uint8_t b) {
     uint8_t p = 0; /* the product of the multiplication */
     while (a && b) {
-        if (b & 1) /* if b is odd, then add the corresponding a to p (final product = sum of all a's corresponding to odd b's) */
+        if (b &
+            1) /* if b is odd, then add the corresponding a to p (final product = sum of all a's corresponding to odd b's) */
             p ^= a; /* since we're in GF(2^m), addition is an XOR */
 
-        if (a & 0x80) /* GF modulo: if a >= 128, then it will overflow when shifted left, so reduce */
+        if (a &
+            0x80) /* GF modulo: if a >= 128, then it will overflow when shifted left, so reduce */
             a = (a << 1) ^ 0xC3;
         else
             a <<= 1; /* equivalent to a*2 */
@@ -222,8 +243,9 @@ void Kuznechik::SetKey(__m256i key) {
             F(C_[8 * i + j - 1], keys_[2 * i + 2], keys_[2 * i + 3]);
         }
     }
-
-
+    for (int i = 0; i < 10; ++i) {
+        keys256_[i] = _mm256_set_m128i(keys_[i], keys_[i]);
+    }
 }
 
 void Kuznechik::F(__m128i C, __m128i &first, __m128i &second) {
@@ -251,6 +273,12 @@ void Kuznechik::ComputeC() {
 __m128i Kuznechik::GetKey(int i) const {
     return keys_[i];
 }
+
+void Kuznechik::X2(__m256i *block, size_t key_number) const {
+    *block ^= keys256_[key_number];
+}
+
+
 
 
 

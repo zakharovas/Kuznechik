@@ -8,6 +8,7 @@
 #include <emmintrin.h>
 #include <immintrin.h>
 
+
 class Kuznechik {
 public:
     Kuznechik();
@@ -18,9 +19,12 @@ public:
 
     void EncryptBlock(__m128i *block) const;
 
+    void Encrypt2Blocks(__m256i *block) const;
+
 //    void DecryptBlock(__m128i *block) const;
 
     __m128i keys_[10];
+    __m256i keys256_[10];
     static uint16_t nonlinear_matrix_[0x10000];
     static __m128i linear_matrix_[8][0x10000];
     static __m128i byte_linear_matrix_[16][0x100];
@@ -45,11 +49,15 @@ public:
 
     inline void X(__m128i *block, size_t key_number) const;
 
+    inline void X2(__m256i *block, size_t key_number) const;
+
     void S(__m128i *block) const;
 
     static void L(__m128i *block);
 
     inline void SL(__m128i *block) const;
+
+    inline void SL2(__m256i *block) const;
 
     void SL16(__m128i *block) const;
 

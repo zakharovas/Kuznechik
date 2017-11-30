@@ -1,4 +1,4 @@
-FLAGS=-std=c++14 -O3 -mavx  -msse -msse2 -msse3 -mfpmath=sse
+FLAGS=-std=c++14 -O2 -mavx2 -mavx  -msse -msse2 -msse3 -mfpmath=sse
 
 all: cypher_test
 

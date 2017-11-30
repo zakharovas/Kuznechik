@@ -14,8 +14,8 @@ void print_m128(__m128i a) {
     std::cout << std::endl;
 }
 
-int main() {
-    Kuznechik::Initialize();
+
+void CheckTests() {
     Kuznechik cypher;
     uint8_t Stest[5][16] =
             {
@@ -35,7 +35,7 @@ int main() {
         cypher.S(test + i);
         if (!m128_eq(test[i], test[i + 1])) {
             std::cout << "S TEST " << i << " FAILED\n";
-            return 1;
+            exit(1);
         }
     }
     std::cout << "S TESTS PASSED\n";
@@ -55,7 +55,7 @@ int main() {
         cypher.L(test + i);
         if (!m128_eq(test[i], test[i + 1])) {
             std::cout << "L TEST " << i << " FAILED\n";
-            return 1;
+            exit(1);
         }
     }
     std::cout << "L TESTS PASSED\n";
@@ -86,7 +86,7 @@ int main() {
         __m128i answer = *((__m128i *) Keys[i]);
         if (!m128_eq(current_key, answer)) {
             std::cout << "KEY  " << i << " IS WRONG\n";
-            return 1;
+            exit(1);
         }
     }
     std::cout << "KEY TEST PASSED" << std::endl;
@@ -97,33 +97,72 @@ int main() {
 
     };
     __m128i block_ = *((__m128i *) block);
+
     uint8_t answer[16] = {
             0x7f, 0x67, 0x9d, 0x90, 0xbe, 0xbc, 0x24, 0x30, 0x5a, 0x46, 0x8d, 0x42, 0xb9, 0xd4,
             0xed, 0xcd
     };
+    __m256i block256 = _mm256_set_m128i(block_, block_);
     cypher.EncryptBlock(&block_);
+    cypher.Encrypt2Blocks(&block256);
+
     __m128i answer_ = *((__m128i *) answer);
-    if (! m128_eq(answer_, block_)){
+    if (!m128_eq(answer_, block_)) {
         std::cout << "ENCODING TEST FAILED\n";
-        return 1;
+        exit(1);
+    }
+    if (!(m128_eq(answer_, _mm256_extractf128_si256(block256, 0)) &&
+          m128_eq(answer_, _mm256_extractf128_si256(block256, 1)))) {
+        std::cout << "ENCODING 2 BLOCKS TEST FAILED\n";
+        exit(1);
     }
     std::cout << "ENCODING TEST PASSED" << std::endl;
-    int size = 0x10000000;
+}
+
+
+void SpeedTest(int size, int maxk) {
+    Kuznechik cypher;
+    cypher.GenerateKey();
     uint8_t *data_test = new uint8_t[size];
     for (int i = 0; i < size; ++i) {
         data_test[i] = rand();
     }
+    std::cout << "ENCODING SIZE: " << 1.0 * size / 0x100000 << " MB " << maxk << "TIMES\n";
+    cypher.GenerateKey();
     auto now = std::chrono::high_resolution_clock::now();
     __m128i *pointer = (__m128i *) data_test;
-    int maxk = 4;
     for (int k = 0; k < maxk; ++k) {
         for (int i = 0, j = 0; i < size; i += 16, ++j) {
             cypher.EncryptBlock(pointer + j);
         }
     }
-    std::cout << "OK" << std::endl;
-    std::cout  << 1.0 * size * maxk /0x100000 << " MB\n";
-    std::cout  << 1000.0 * size * maxk /0x100000 / std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() - now).count() << " MB/s\n";
+    std::cout << "ONE BLOCK SPEED " << 1000.0 * size * maxk / 0x100000 /
+                                       std::chrono::duration_cast<std::chrono::milliseconds>(
+                                               std::chrono::high_resolution_clock::now() -
+                                               now).count() << " MB/s\n";
+    now = std::chrono::high_resolution_clock::now();
+    __m256i *pointer256 = (__m256i *) data_test;
+
+    for (int k = 0; k < maxk; ++k) {
+        for (int i = 0, j = 0; i < size; i += 32, ++j) {
+            cypher.Encrypt2Blocks(pointer256 + j);
+        }
+    }
+    std::cout << "TWO BLOCK SPEED " << 1000.0 * size * maxk / 0x100000 /
+                                       std::chrono::duration_cast<std::chrono::milliseconds>(
+                                               std::chrono::high_resolution_clock::now() -
+                                               now).count() << " MB/s\n";
+    print_m128(*(__m128i *) data_test);
+    std::cout << "SPEED TEST DONE\n";
+};
+
+int main() {
+    Kuznechik::Initialize();
+    CheckTests();
+    int size = 0x4000000;
+    int maxk = 1;
+    SpeedTest(size, maxk);
+
+
     return 0;
 }
