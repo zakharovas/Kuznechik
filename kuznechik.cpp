@@ -1,6 +1,3 @@
-//
-// Created by alexander on 21.11.2017.
-//
 #include <iostream>
 #include "kuznechik.h"
 
@@ -14,17 +11,13 @@ static void print_m128(__m128i a) {
 
 uint8_t Kuznechik::byte_nonlinear_matrix_[0x100];
 
-uint16_t Kuznechik::nonlinear_matrix_[0x10000];
-
 __m128i Kuznechik::byte_linear_matrix_[16][0x100];
 
 __m128i Kuznechik::byte_sl_matrix_[16][0x100];
 
-__m128i Kuznechik::sl_matrix_[8][0x10000];
-
-__m128i Kuznechik::linear_matrix_[8][0x10000];
-
 __m128i Kuznechik::C_[32];
+
+bool Kuznechik::initialized = false;
 
 
 void Kuznechik::EncryptBlock(__m128i *block) const {
@@ -46,8 +39,8 @@ void Kuznechik::Encrypt2Blocks(__m256i *block) const {
 void Kuznechik::GenerateKey() {
     __m256i basic_key;
     uint16_t key_as_vector[16];
-    for (size_t i = 0; i < 16; ++i) {
-        key_as_vector[i] = uint16_t(rand());
+    for (uint16_t &i : key_as_vector) {
+        i = uint16_t(rand());
     }
     basic_key = _mm256_load_si256((__m256i *) key_as_vector);
     SetKey(basic_key);
@@ -55,20 +48,14 @@ void Kuznechik::GenerateKey() {
 }
 
 Kuznechik::Kuznechik() {
+    if (!initialized) {
+        Kuznechik::Initialize();
+    }
     GenerateKey();
-    ComputeSLMatrix();
 }
 
 void Kuznechik::X(__m128i *block, size_t key_number) const {
-    //*block = _mm_xor_si128(*block, keys_[key_number]);
     *block ^= keys_[key_number];
-}
-
-void Kuznechik::S(__m128i *block) const {
-    uint8_t *as_array = (uint8_t *) block;
-    for (size_t i = 0; i < 16; ++i) {
-        as_array[i] = Kuznechik::byte_nonlinear_matrix_[as_array[i]];
-    }
 }
 
 void Kuznechik::ComputeNonlinearMatrix() {
@@ -93,20 +80,14 @@ void Kuznechik::ComputeNonlinearMatrix() {
     for (size_t i = 0; i < 0x100; ++i) {
         byte_nonlinear_matrix_[i] = byte_matrix[i];
     }
-    for (size_t i = 0; i < 0x10000; ++i) {
-        uint16_t first = i >> 8;
-        uint16_t second = i & 0xFF;
-        nonlinear_matrix_[i] = ((byte_matrix[first] << 8) | (byte_matrix[second]));
-    }
-
 }
 
 void Kuznechik::Initialize() {
     ComputeNonlinearMatrix();
     ComputeByteLinearMatrix();
-    ComputeLinearMatrix();
     ComputeSLMatrix();
     ComputeC();
+    initialized = true;
 }
 
 void Kuznechik::L(__m128i *block) {
@@ -116,7 +97,13 @@ void Kuznechik::L(__m128i *block) {
         answer = _mm_xor_si128(answer, Kuznechik::byte_linear_matrix_[i][as_array[i]]);
     }
     *block = answer;
+}
 
+void Kuznechik::S(__m128i *block) const {
+    uint8_t *as_array = (uint8_t *) block;
+    for (size_t i = 0; i < 16; ++i) {
+        as_array[i] = Kuznechik::byte_nonlinear_matrix_[as_array[i]];
+    }
 }
 
 
@@ -134,35 +121,13 @@ void Kuznechik::SL2(__m256i *block) const {
     __m256i answer = _mm256_setzero_si256();
     uint8_t *as_array = (uint8_t *) block;
     for (size_t i = 0; i < 16; ++i) {
-        answer = _mm256_xor_si256(answer, _mm256_set_m128i(Kuznechik::byte_sl_matrix_[i][as_array[i]],
-                                   Kuznechik::byte_sl_matrix_[i][as_array[16 + i]]));
+        answer = _mm256_xor_si256(answer,
+                                  _mm256_set_m128i(Kuznechik::byte_sl_matrix_[i][as_array[i]],
+                                                   Kuznechik::byte_sl_matrix_[i][as_array[16 +
+                                                                                          i]]));
     }
     *block = answer;
 }
-
-void Kuznechik::SL16(__m128i *block) const {
-    __m128i answer = _mm_setzero_si128();
-    uint16_t *as_array = (uint16_t *) block;
-    for (size_t i = 0; i < 8; ++i) {
-        answer = _mm_xor_si128(answer, Kuznechik::sl_matrix_[i][as_array[i]]);
-    }
-    *block = answer;
-}
-
-void Kuznechik::ComputeLinearMatrix() {
-
-    for (int position = 0; position < 8; ++position) {
-        for (uint32_t number = 0; number < 0x10000; ++number) {
-            uint16_t first = (number >> 8);
-            uint16_t second = (number & 0xFF);
-            linear_matrix_[position][number] = _mm_xor_si128(
-                    byte_linear_matrix_[2 * position + 1][first],
-                    byte_linear_matrix_[2 * position][second]);
-        }
-    }
-
-}
-
 
 //https://en.wikipedia.org/wiki/Finite_field_arithmetic
 uint8_t gmul(uint8_t a, uint8_t b) {
@@ -225,12 +190,6 @@ void Kuznechik::ComputeSLMatrix() {
             byte_sl_matrix_[position][number] = byte_linear_matrix_[position][byte_nonlinear_matrix_[number]];
         }
     }
-    for (int position = 0; position < 8; ++position) {
-        for (uint32_t number = 0; number < 0x10000; ++number) {
-            sl_matrix_[position][number] = linear_matrix_[position][nonlinear_matrix_[number]];
-        }
-    }
-
 }
 
 void Kuznechik::SetKey(__m256i key) {
@@ -277,8 +236,3 @@ __m128i Kuznechik::GetKey(int i) const {
 void Kuznechik::X2(__m256i *block, size_t key_number) const {
     *block ^= keys256_[key_number];
 }
-
-
-
-
-
